@@ -1,0 +1,25 @@
+# 1. 屏蔽虚拟环境 (最重要)
+.venv/
+venv/
+Lib/
+Scripts/
+
+# 2. 屏蔽 PyCharm 配置文件夹
+.idea/
+
+# 3. 屏蔽 Python 编译缓存 (那些讨厌的文件夹)
+__pycache__/
+*.pyc
+
+# 4. 屏蔽敏感数据和运行时文件 (根据你的 data 目录结构)
+# 保留 database.py 代码，但屏蔽数据文件
+data/cookies.json
+data/History.db
+data/temp_files/
+*.log
+
+# 5. 系统垃圾文件
+Thumbs.db
+
+# 6. 屏蔽配置文件
+config.py
