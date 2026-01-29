@@ -55,11 +55,11 @@ class Notifier:
 
             # 🔴 [核心修改2] 构造群发邮件头
             # 生成类似: 同学 <a@qq.com>, 同学 <b@qq.com> 的格式
-            # 这样所有收件人都能看到这封邮件是发给谁的
             to_header_list = [formataddr(("同学", email)) for email in self.receiver_emails]
             message['To'] = ", ".join(to_header_list)
 
             message['Subject'] = Header(f"🔔 {title}", 'utf-8')
+
 
             html_content = f"""
             <div style="font-family: '微软雅黑', sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; max-width: 600px;">
@@ -68,16 +68,24 @@ class Notifier:
                     {clean_content}
                 </div>
                 <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                <p style="font-size: 12px; color: #999; text-align: center;">来自 NUIST Bulletin Bot 🤖 | AI 自动摘要</p>
+                <p style="font-size: 12px; color: #999; text-align: center;">
+                    来自 NUIST Bulletin Bot 🤖 | AI 自动摘要
+                    <br>
+                    <a href="https://github.com/LING71671/NUIST_Bulletin_Bot_PRO" style="color: #999; text-decoration: underline; margin-top: 5px; display: inline-block;">
+                        GitHub 项目主页
+                    </a>
+                </p>
             </div>
             """
+
+            # 这一行也必须移回来，和 html_content 开头对齐
             message.attach(MIMEText(html_content, 'html', 'utf-8'))
+
 
             server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
             server.login(self.sender_email, self.email_password)
 
             # 🔴 [核心修改3] 传递列表给 sendmail
-            # 这里必须传 list，不能传 string
             server.sendmail(self.sender_email, self.receiver_emails, message.as_string())
 
             server.quit()
