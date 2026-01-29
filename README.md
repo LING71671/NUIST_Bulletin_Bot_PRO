@@ -28,6 +28,9 @@
     * 🤖 **Webhook**：支持钉钉、飞书、企业微信机器人接入。
 * **💾 数据持久化**：使用 SQLite 数据库自动去重，防止重复推送。
 
+## 📈 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=LING71671/NUIST_Bulletin_Bot_PRO&type=Date)](https://star-history.com/#LING71671/NUIST_Bulletin_Bot_PRO&Date)
 ---
 
 ## 🛠️ 安装指南
@@ -117,6 +120,12 @@ NOTIFY = {
     }
 }
 ```
+
+## 🤝 贡献者 (Contributors)
+
+<a href="https://github.com/LING71671/NUIST_Bulletin_Bot_PRO/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=LING71671/NUIST_Bulletin_Bot_PRO" />
+</a>
 
 ## 📄 开源协议 (License)
 
