@@ -56,3 +56,64 @@ pip install -r requirements.txt
 ```bash
 playwright install chromium
 ```
+
+## ⚙️ 配置指南
+
+安装完成后，你需要告诉机器人你的账号和密码才能让它工作。
+
+### 第一步：创建配置文件
+在项目根目录下，你会看到一个名为 `config_sample.py` 的文件。
+1.  **复制** 这个文件。
+2.  将复制后的文件重命名为 **`config.py`**。
+
+### 第二步：修改配置信息
+用 PyCharm 或记事本打开刚才创建的 `config.py`，根据你的实际情况修改以下三处内容：
+
+#### 1. 🏫 学校账号设置 
+找到 `SCHOOL` 区域，填入你的统一身份认证账号和密码：
+
+```python
+SCHOOL = {
+    "USERNAME": "2023123456",      # <--- 在引号里填入你的学号
+    "PASSWORD": "my_password123",  # <--- 在引号里填入你的密码
+    "VPN_URL": "[https://client.vpn.nuist.edu.cn/](https://client.vpn.nuist.edu.cn/)",
+    "LOGIN_URL": "[https://authserver.nuist.edu.cn/authserver/login?service=https://client.vpn.nuist.edu.cn/enlink/api/client/callback/cas](https://authserver.nuist.edu.cn/authserver/login?service=https://client.vpn.nuist.edu.cn/enlink/api/client/callback/cas)"
+}
+```
+
+#### 2.🤖 AI 模型设置
+找到 AI_KEYS 区域。
+
+```
+AI_KEYS = {
+    "deepseek": "sk-xxxxxxxxxxxxxxxxxxxxxxxx",  # <--- 填入你的 DeepSeek API Key
+    "aliyun": "",     # 如果没有可以留空
+    "silicon": "",
+    "zhipu": ""
+}
+```
+
+#### 3.📧 推送设置
+找到 NOTIFY 区域。
+
+```
+NOTIFY = {
+    "EMAIL": {
+        "ENABLE": True,            # <--- 改为 True 开启功能
+        "SMTP_SERVER": "smtp.qq.com",
+        "SMTP_PORT": 465,
+        "SENDER": "123456@qq.com", # <--- 发件人邮箱 (你的)
+        "PASSWORD": "abcdefghijkl",# <--- 填入邮箱授权码 (不是QQ密码！)
+        "RECEIVER": "123456@qq.com"# <--- 收件人邮箱 (通常和发件人一样)
+    },
+    "QMSG": {
+        "ENABLE": False,           # 如果你有 Qmsg Key，改为 True
+        "KEY": ""                  # Qmsg Key获取请去https://qmsg.zendee.cn/login获取
+  },
+    "WEBHOOK": {
+        "ENABLE": False,
+        "URL": ""
+    }
+}
+```
+
