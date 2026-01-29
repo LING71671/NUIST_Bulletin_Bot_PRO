@@ -9,6 +9,7 @@
 它能自动登录学校 VPN，监控最新“信息公告”，利用 AI 大模型自动阅读并生成摘要，最后通过多种渠道推送到你的手机。
 
 拒绝错过重要通知，拒绝阅读八股文，让 AI 帮你划重点！
+（本项目还在测试阶段，有很多代码没有优化，还需要努力，目前只为南信大定制，后面将会修改，让兼容性更强）
 
 ---
 
@@ -31,6 +32,27 @@
 ## 🛠️ 安装指南
 
 ### 1. 克隆项目
+首先将项目下载到本地：
 ```bash
-git clone [https://github.com/你的用户名/NUIST_Bulletin_Bot.git](https://github.com/你的用户名/NUIST_Bulletin_Bot.git)
-cd NUIST_Bulletin_Bot
+git clone [https://github.com/LING71671/NUIST_Bulletin_Bot_PRO.git](https://github.com/LING71671/NUIST_Bulletin_Bot_PRO.git)
+cd NUIST_Bulletin_Bot_PRO
+```
+### 2. 创建虚拟环境
+Windows:
+```bash
+python -m venv .venv
+.\.venv\Scripts\activate
+```
+Mac / Linux:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+### 3. 安装依赖包
+```bash
+pip install -r requirements.txt
+```
+### 4. 安装浏览器内核
+```bash
+playwright install chromium
+```
