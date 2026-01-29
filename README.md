@@ -3,13 +3,14 @@
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Playwright](https://img.shields.io/badge/Playwright-Browser-green)
 ![AI Powered](https://img.shields.io/badge/AI-DeepSeek%2FGLM%2FQwen-purple)
-![License](https://img.shields.io/badge/License-MIT-orange)
+![License](https://img.shields.io/badge/License-GPLv3-red)
 
 一个基于 Python 的智能化校园公告监控系统，专为南京信息工程大学（NUIST）设计。
 它能自动登录学校 VPN，监控最新“信息公告”，利用 AI 大模型自动阅读并生成摘要，最后通过多种渠道推送到你的手机。
 
 拒绝错过重要通知，拒绝阅读八股文，让 AI 帮你划重点！
-（本项目还在测试阶段，有很多代码没有优化，还需要努力，目前只为南信大定制，后面将会修改，让兼容性更强）
+
+> ⚠️ **说明**：本项目还在测试阶段，有很多代码没有优化，还需要努力。目前只为南信大定制，后续将会重构以增强兼容性。
 
 ---
 
