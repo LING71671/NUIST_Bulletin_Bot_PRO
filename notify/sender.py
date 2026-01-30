@@ -132,5 +132,5 @@ if __name__ == "__main__":
     print("🚀 正在测试群发功能...")
     notifier = Notifier()
     t_title = "测试: 多人邮件发送"
-    t_content = "📌 **状态**：\n已支持多收件人\n请检查两个邮箱是否都收到了！"
+    t_content = "📌 **状态**：\n已支持多收件人\n请检查邮箱是否都收到了！"
     notifier.send(t_title, t_content)

@@ -75,7 +75,8 @@ def main():
 
         # AI 总结
         print("    🧠 AI 分析中...")
-        summary = ai.summarize(content)
+        # 🔴 传入 title 参数，启用白名单过滤
+        summary = ai.summarize(content, title=title)
 
         if summary == "IGNORE":
             print("    🗑️ 无价值内容，忽略。")

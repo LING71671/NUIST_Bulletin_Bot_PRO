@@ -2,11 +2,9 @@ import os
 import json
 import time
 import PIL.Image
-import logging
-import contextlib  # 👈 新加这行，用来做“静音”处理
 import config
 
-# 屏蔽 onnxruntime 的红色警告
+# 屏蔽干扰日志
 os.environ["ORT_LOGGING_LEVEL"] = "3"
 
 # 🚑 修复 Pillow 兼容性
@@ -27,15 +25,16 @@ class LoginManager:
         self.username = username
         self.password = password
 
-        # 路径配置
         current_script_path = os.path.abspath(__file__)
         base_dir = os.path.dirname(os.path.dirname(current_script_path))
         self.cookie_file = os.path.join(base_dir, "data", "cookies.json")
-
-        # 登录 URL
         self.login_url = config.SCHOOL["LOGIN_URL"]
+
+        # 🔴 核心修复：确保与 UrlFinder 使用完全一致的 User-Agent
+        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
     def get_cookies(self):
-        # 1. 优先读取本地缓存
+        """获取 Cookie：优先读缓存，无缓存则登录"""
         if os.path.exists(self.cookie_file) and os.path.getsize(self.cookie_file) > 0:
             try:
                 with open(self.cookie_file, 'r', encoding='utf-8') as f:
@@ -56,105 +55,143 @@ class LoginManager:
         print(f"    💾 Cookie 已保存 ({len(cookies)} 个)")
         return self._format_cookie_str(cookies)
 
+    # ==========================================
+    # 🧱 原子组件：判定逻辑
+    # ==========================================
+
+    def _check_critical_errors(self, page):
+        if page.locator("#formErrorTip").is_visible():
+            err_text = page.locator("#formErrorTip").inner_text()
+            if "验证码" in err_text:
+                raise Exception("验证码错误")
+            if "密码" in err_text or "账号" in err_text:
+                raise Exception("FATAL:账号密码错误")
+
+    def _is_login_success(self, page):
+        # 1. URL 特征
+        if "client/app" in page.url or "index" in page.url:
+            print("    ✅ 登录成功 (URL特征匹配)！")
+            return True
+        # 2. 标题特征
+        if page.get_by_text("应用访问统一入口").is_visible():
+            print("    ✅ 登录成功 (检测到首页标题)！")
+            return True
+        # 3. 元素特征
+        if page.get_by_text("信息公告").is_visible():
+            print("    ✅ 登录成功 (检测到信息公告)！")
+            return True
+        return False
+
+    def _wait_for_success(self, page):
+        print("    ⏳ 等待跳转至 VPN 首页...")
+        start_time = time.time()
+
+        while time.time() - start_time < 15:
+            self._check_critical_errors(page)
+            if self._is_login_success(page):
+                return True
+            time.sleep(0.5)
+
+        return False
+
+    # ==========================================
+    # 🔧 原子组件：操作逻辑
+    # ==========================================
+
+    def _solve_captcha(self, page, ocr):
+        try:
+            print("    👀 正在识别验证码...")
+            captcha_box = page.locator("#captchaImg")
+            img_bytes = captcha_box.screenshot()
+            code = ocr.classification(img_bytes)
+            print(f"    🧮 识别结果: [{code}]")
+            page.locator("#captcha").fill(code)
+        except Exception as e:
+            print(f"    ⚠️ 验证码处理失败: {e}")
+
+    def _fill_form(self, page, ocr):
+        if page.locator("#pwdLoginSpan").is_visible():
+            page.locator("#pwdLoginSpan").click()
+
+        page.locator("#username").fill(str(self.username))
+        page.locator("#password").fill(str(self.password))
+
+        page.locator("body").click()
+        page.wait_for_timeout(500)
+
+        if HAS_OCR and page.locator("#captchaImg").is_visible():
+            self._solve_captcha(page, ocr)
+
+        print("    🚀 提交登录...")
+        page.locator("#login_submit").click()
+
+    def _execute_attempt(self, page, context, ocr):
+        try:
+            print(f"    🔗 访问统一身份认证...")
+            page.goto(self.login_url)
+            page.wait_for_load_state("domcontentloaded")
+
+            if self._is_login_success(page):
+                return True
+
+            self._fill_form(page, ocr)
+
+            if self._wait_for_success(page):
+                # 登录成功后多等一会，确保 Session Cookie 写入完成
+                page.wait_for_timeout(3000)
+                return True
+            else:
+                print("    ⚠️ 等待跳转超时")
+                return False
+
+        except Exception as e:
+            msg = str(e)
+            if "FATAL" in msg:
+                print(f"    ❌ 致命错误: {msg}")
+                return None
+            if "验证码错误" in msg:
+                print("    ⚠️ 验证码错误，准备刷新重试...")
+                return False
+
+            print(f"    ⚠️ 尝试过程异常: {msg}")
+            return False
+
+    # ==========================================
+    # 🚀 主入口
+    # ==========================================
+
     def _run_login(self):
         if not self.username or not self.password:
             print("❌ 未配置账号密码！")
             return None
 
-        print(f"    🤖 [登录] 启动浏览器 (账号: {self.username})...")
         ocr = ddddocr.DdddOcr() if HAS_OCR else None
+        MAX_RETRIES = 3
 
-        # 正式模式 headless=True
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            print(f"    🤖 [登录] 启动浏览器 (账号: {self.username})...")
+
+            # 启动浏览器
+            browser = p.chromium.launch(headless=False)
+
+            # 🔴 关键修改：注入与 UrlFinder 一致的 User-Agent
+            context = browser.new_context(user_agent=self.user_agent)
+
             page = context.new_page()
 
-            try:
-                print(f"    🔗 访问统一身份认证...")
-                page.goto(self.login_url)
+            for attempt in range(1, MAX_RETRIES + 1):
+                print(f"\n    🔄 [第 {attempt}/{MAX_RETRIES} 次尝试登录]...")
 
-                # === 1. 检查是否无需登录 ===
-                try:
-                    if page.get_by_text("信息公告").is_visible(timeout=2000):
-                        print("    🎉 检测到无需登录，直接进入首页！")
-                        return self._save_cookies_and_return(context)
-                except:
-                    pass
+                result = self._execute_attempt(page, context, ocr)
 
-                # === 2. 填写表单 ===
-                print("    📝 填写账号密码...")
-                if page.locator("#pwdLoginSpan").is_visible():
-                    page.locator("#pwdLoginSpan").click()
+                if result is True:
+                    return self._save_cookies_and_return(context)
+                elif result is None:
+                    break
 
-                page.locator("#username").fill(str(self.username))
-                page.locator("#password").fill(str(self.password))
-
-                # === 3. 激活验证码 ===
-                print("    🖱️ 点击页面激活验证码...")
-                page.locator("body").click()
-                page.wait_for_timeout(1500)
-
-                if HAS_OCR and page.locator("#captchaImg").is_visible():
-                    print("    👀 发现验证码，正在识别...")
-                    self._solve_captcha(page, ocr)
-                else:
-                    print("    👻 未检测到验证码，尝试直接登录。")
-
-                # === 4. 提交登录 (修复点：使用 ID 定位) ===
-                print("    🚀 提交登录...")
-                # 🔴 之前报错就是这里，现在改成精确的 ID 定位
-                page.locator("#login_submit").click()
-
-                # === 5. 结果判定 ===
-                print("    ⏳ 等待跳转至 VPN 首页...")
-
-                try:
-                    # 等待"信息公告"出现
-                    page.wait_for_selector("text=信息公告", timeout=15000)
-                    print("    ✅ 登录成功！")
-                    page.wait_for_timeout(3000)
-
-                except Exception:
-                    print("    ⚠️ 跳转超时，检查页面提示...")
-                    # 检查错误提示
-                    error_el = page.locator("#formErrorTip")
-                    if error_el.is_visible():
-                        err_text = error_el.inner_text()
-                        print(f"    🚨 登录被拦截: {err_text}")
-
-                        if "验证码" in err_text:
-                            print("    🔄 正在尝试补填验证码...")
-                            self._solve_captcha(page, ocr)
-                            # 🔴 这里也改成了 ID 定位
-                            page.locator("#login_submit").click()
-
-                            page.wait_for_selector("text=信息公告", timeout=15000)
-                            print("    ✅ 二次尝试成功！")
-                    else:
-                        # 最后检查一次 URL
-                        if "client.vpn" in page.url:
-                            print("    ✅ (URL检测) 登录成功！")
-                        else:
-                            page.screenshot(path="login_final_error.png")
-                            raise Exception("登录失败，未跳转至预期页面")
-
-                return self._save_cookies_and_return(context)
-
-            except Exception as e:
-                print(f"    ❌ 流程异常: {e}")
-                return None
-            finally:
-                browser.close()
-
-    def _solve_captcha(self, page, ocr):
-        try:
-            img_bytes = page.locator("#captchaImg").screenshot()
-            code = ocr.classification(img_bytes)
-            print(f"    🧮 验证码识别结果: [{code}]")
-            page.locator("#captcha").fill(code)
-        except:
-            pass
+            print("❌ 达到最大重试次数，登录失败。")
+            browser.close()
+            return None
 
     def _format_cookie_str(self, cookies_list):
         return "; ".join([f"{c['name']}={c['value']}" for c in cookies_list])
@@ -162,11 +199,10 @@ class LoginManager:
 if __name__ == "__main__":
     MY_USERNAME = config.SCHOOL["USERNAME"]
     MY_PASSWORD = config.SCHOOL["PASSWORD"]
-
     lm = LoginManager(MY_USERNAME, MY_PASSWORD)
 
     if os.path.exists(lm.cookie_file):
         os.remove(lm.cookie_file)
 
-    print("🏁 开始测试 (修复点击版)...")
+    print("🏁 开始测试 (User-Agent 修复版)...")
     lm.get_cookies()
