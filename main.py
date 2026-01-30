@@ -69,6 +69,7 @@ def main():
         print(f"\n⚡ 处理新公告: [{title}]")
 
         # 抓取 (fetcher 会自动读取 cookies.json)
+        # content 结构: {'type':..., 'text':..., 'files': ['path/to/a.doc', 'path/to/b.pdf']}
         content = fetch_content(url)
         if not content:
             continue
@@ -85,7 +86,10 @@ def main():
 
         # 推送
         print("    🔔 发送通知...")
-        notifier.send(title, summary)
+
+        # 🟢 [核心修改] 提取文件列表并传给 notifier
+        files_to_send = content.get('files', [])
+        notifier.send(title, summary, attachments=files_to_send)
 
         # 入库
         db.add_record(url, title, summary)
