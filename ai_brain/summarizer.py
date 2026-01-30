@@ -43,7 +43,6 @@ class BulletinSummarizer:
         provider_name, model_name = self.models.get(role, ("deepseek", "deepseek-chat"))
         client = self.clients.get(provider_name)
 
-        # 如果指定的服务商没配 Key，尝试降级 (这里简单处理，直接返回 None)
         if not client:
             print(f"    ⚠️ 未配置 {provider_name} 的 API Key，跳过 {role}")
             return None
@@ -55,7 +54,7 @@ class BulletinSummarizer:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ],
-                temperature=0.1,  # 低温度，保证输出稳定
+                temperature=0.1,
                 timeout=45
             )
             return response.choices[0].message.content
@@ -71,8 +70,7 @@ class BulletinSummarizer:
         text = ""
         try:
             with fitz.open(filepath) as doc:
-                # 读前 10 页，防止超大 PDF 消耗过多 Token
-                for page in doc[:10]:
+                for page in doc[:10]: # 限制前10页
                     text += page.get_text()
             return text[:5000]
         except: return "[PDF解析错误]"
@@ -86,15 +84,9 @@ class BulletinSummarizer:
         except: return "[Word解析错误]"
 
     def _extract_excel(self, filepath):
-        """读取 Excel 并在 Markdown 中转为文本表格"""
         try:
-            # 🔴 [修改] 增加读取行数到 100，防止漏掉名单
             df = pd.read_excel(filepath, nrows=100).fillna("")
-
-            if df.empty:
-                return "[空Excel表格]"
-
-            # 转换为 Markdown 格式
+            if df.empty: return "[空Excel表格]"
             return df.to_markdown(index=False)[:4000]
         except Exception as e:
             return f"[Excel解析错误: {str(e)}]"
@@ -117,7 +109,7 @@ class BulletinSummarizer:
             with open(filepath, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
 
-            client = self.clients.get("zhipu") # 强制使用智谱 Vision
+            client = self.clients.get("zhipu")
             if not client: return "[未配置Vision模型]"
 
             response = client.chat.completions.create(
@@ -138,39 +130,51 @@ class BulletinSummarizer:
             print(f"    ⚠️ 图片识别失败: {e}")
             return "[图片无法识别]"
 
+    # ==========================================
+    # 📉 复杂度优化：使用字典映射代替 if-else
+    # ==========================================
+
     def process_attachments(self, file_paths):
-        combined_text = ""
+        """处理附件内容 (低复杂度版)"""
         if not file_paths: return ""
 
+        combined_text = ""
         print(f"    📎 正在预处理 {len(file_paths)} 个附件...")
+
+        # 定义后缀与处理函数的映射表
+        extractors = {
+            '.pdf': self._extract_pdf,
+            '.docx': self._extract_word,
+            '.doc': self._extract_word,
+            '.xlsx': self._extract_excel,
+            '.xls': self._extract_excel,
+            '.pptx': self._extract_ppt,
+            '.ppt': self._extract_ppt,
+            '.jpg': self._extract_image_content,
+            '.jpeg': self._extract_image_content,
+            '.png': self._extract_image_content
+        }
+
         for path in file_paths:
             if not os.path.exists(path): continue
 
             ext = os.path.splitext(path)[1].lower()
-            content = ""
 
-            # 根据后缀分发处理
-            if ext == '.pdf': content = self._extract_pdf(path)
-            elif ext in ['.docx', '.doc']: content = self._extract_word(path)
-            elif ext in ['.xlsx', '.xls']: content = self._extract_excel(path)
-            elif ext in ['.pptx', '.ppt']: content = self._extract_ppt(path)
-            elif ext in ['.jpg', '.jpeg', '.png']: content = self._extract_image_content(path)
+            # 查表调用，代替 if-else
+            handler = extractors.get(ext)
 
-            if content:
-                combined_text += f"\n\n--- 附件 ({os.path.basename(path)}) ---\n{content}\n"
+            if handler:
+                content = handler(path)
+                if content:
+                    combined_text += f"\n\n--- 附件 ({os.path.basename(path)}) ---\n{content}\n"
 
         return combined_text
 
     # ==========================
-    # 🧠 主逻辑 (核心修复)
+    # 🧠 主逻辑
     # ==========================
 
     def summarize(self, fetch_result, title=None):
-        """
-        核心总结入口
-        :param fetch_result: fetcher.py 返回的字典 {'text':..., 'files':...}
-        :param title: 公告标题 (用于白名单过滤)
-        """
         if not fetch_result: return None
 
         web_text = fetch_result.get('text', '')
@@ -179,24 +183,47 @@ class BulletinSummarizer:
         # 1. 解析附件
         attach_text = self.process_attachments(files)
 
-        # 2. 组装完整上下文
+        # 2. 组装
         safe_title = title if title else (web_text.split('\n')[0] if web_text else "无标题")
         full_context = f"【公告标题】: {safe_title}\n\n【网页正文】:\n{web_text}\n{attach_text}"
 
         if len(full_context) < 20: return "IGNORE"
 
         # ================= 🛡️ 过滤层 (Hunter) =================
-        # ... (保持之前的过滤逻辑不变) ...
+
+        # 白名单机制
         important_keywords = ["通知", "公告", "公示", "名单", "日程", "安排", "招标", "中标", "竞赛", "讲座", "大创", "补考", "申报"]
         is_force_keep = any(k in safe_title for k in important_keywords)
 
-        if not is_force_keep:
-            filter_prompt = "..." # (这里保持你之前的代码)
-            # ...
+        if is_force_keep:
+            print(f"    🛡️ 触发白名单，跳过过滤: {safe_title}")
+        else:
+            # 补全了之前省略的 Prompt
+            filter_prompt = """
+            你是一个学校通知审核员。请判断以下网页内容是否包含【实质性的通知、新闻、活动或公示信息】。
+            
+            🔴 判定为 NO (无价值) 的情况：
+            1. 仅包含网站导航菜单、页脚、版权声明、友情链接。
+            2. 页面提示“404”、“无访问权限”、“系统维护”、“测试页面”。
+            3. 正文几乎为空，或仅有“附件”二字但无具体说明。
+            4. 纯粹的商业广告。
+            
+            🟢 判定为 YES (有价值) 的情况：
+            1. 包含具体的活动时间、地点、参与人员名单。
+            2. 包含科研项目申报、截止日期、招标参数。
+            3. 包含具体的新闻报道、会议纪要。
+            
+            请仅回答 YES 或 NO。
+            """
 
-        # ================= 📝 总结层 (Prompt 船新升级) =================
+            is_valuable = self._call_ai("hunter", filter_prompt, full_context[:2500])
 
-        # 🔴 修改核心：从“总结大意”改为“关键要素提取”
+            if is_valuable and is_valuable.strip().upper().startswith("NO"):
+                return "IGNORE"
+
+        # ================= 📝 总结层 (Prompt 增强版) =================
+
+        # 补全了之前省略的 Prompt
         summary_prompt = """
         你是一个专为高校师生服务的【信息提取助手】。请仔细阅读输入内容，提取关键信息，不要过度概括细节。
 
@@ -219,7 +246,6 @@ class BulletinSummarizer:
         ⏰ **截止时间**：(精确提取日期和具体时间点)
         """
 
-        # 上下文给大一点
         summary = self._call_ai("commander", summary_prompt, full_context[:12000])
 
         if not summary:
