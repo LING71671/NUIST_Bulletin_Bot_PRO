@@ -63,14 +63,14 @@ class BulletinSummarizer:
             return None
 
     # ==========================
-    # 📂 附件解析模块 (增强版)
+    # 📂 附件解析模块
     # ==========================
 
     def _extract_pdf(self, filepath):
         text = ""
         try:
             with fitz.open(filepath) as doc:
-                for page in doc[:10]: # 限制前10页
+                for page in doc[:10]:
                     text += page.get_text()
             return text[:5000]
         except: return "[PDF解析错误]"
@@ -130,19 +130,13 @@ class BulletinSummarizer:
             print(f"    ⚠️ 图片识别失败: {e}")
             return "[图片无法识别]"
 
-    # ==========================================
-    # 📉 复杂度优化：使用字典映射代替 if-else
-    # ==========================================
+    # ==========================
+    # 📉 复杂度优化：原子化处理
+    # ==========================
 
-    def process_attachments(self, file_paths):
-        """处理附件内容 (低复杂度版)"""
-        if not file_paths: return ""
-
-        combined_text = ""
-        print(f"    📎 正在预处理 {len(file_paths)} 个附件...")
-
-        # 定义后缀与处理函数的映射表
-        extractors = {
+    def _get_extractor_map(self):
+        """获取后缀映射表"""
+        return {
             '.pdf': self._extract_pdf,
             '.docx': self._extract_word,
             '.doc': self._extract_word,
@@ -155,75 +149,96 @@ class BulletinSummarizer:
             '.png': self._extract_image_content
         }
 
+    def _process_single_file(self, path, extractors):
+        """原子任务：处理单个文件"""
+        if not os.path.exists(path):
+            return None
+
+        ext = os.path.splitext(path)[1].lower()
+        handler = extractors.get(ext)
+
+        if not handler:
+            return None
+
+        content = handler(path)
+        if not content:
+            return None
+
+        return f"\n\n--- 附件 ({os.path.basename(path)}) ---\n{content}\n"
+
+    def process_attachments(self, file_paths):
+        """处理附件列表（纯遍历逻辑，复杂度极低）"""
+        if not file_paths: return ""
+
+        print(f"    📎 正在预处理 {len(file_paths)} 个附件...")
+        extractors = self._get_extractor_map()
+        combined_text = ""
+
         for path in file_paths:
-            if not os.path.exists(path): continue
-
-            ext = os.path.splitext(path)[1].lower()
-
-            # 查表调用，代替 if-else
-            handler = extractors.get(ext)
-
-            if handler:
-                content = handler(path)
-                if content:
-                    combined_text += f"\n\n--- 附件 ({os.path.basename(path)}) ---\n{content}\n"
+            # 调用原子函数处理单个文件
+            result = self._process_single_file(path, extractors)
+            if result:
+                combined_text += result
 
         return combined_text
 
     # ==========================
-    # 🧠 主逻辑
+    # 🧱 原子组件：业务逻辑拆分 (降维打击复杂度)
     # ==========================
 
-    def summarize(self, fetch_result, title=None):
-        if not fetch_result: return None
-
+    def _build_full_context(self, fetch_result, title):
+        """原子任务：组装正文和附件"""
         web_text = fetch_result.get('text', '')
         files = fetch_result.get('files', [])
 
-        # 1. 解析附件
+        # 解析附件
         attach_text = self.process_attachments(files)
 
-        # 2. 组装
+        # 确定标题
         safe_title = title if title else (web_text.split('\n')[0] if web_text else "无标题")
+
+        # 组装全文
         full_context = f"【公告标题】: {safe_title}\n\n【网页正文】:\n{web_text}\n{attach_text}"
+        return safe_title, full_context
 
-        if len(full_context) < 20: return "IGNORE"
+    def _check_relevance(self, safe_title, full_context):
+        """原子任务：Hunter 过滤逻辑"""
+        # 1. 长度初筛
+        if len(full_context) < 20:
+            return False
 
-        # ================= 🛡️ 过滤层 (Hunter) =================
-
-        # 白名单机制
+        # 2. 白名单检查
         important_keywords = ["通知", "公告", "公示", "名单", "日程", "安排", "招标", "中标", "竞赛", "讲座", "大创", "补考", "申报"]
-        is_force_keep = any(k in safe_title for k in important_keywords)
-
-        if is_force_keep:
+        if any(k in safe_title for k in important_keywords):
             print(f"    🛡️ 触发白名单，跳过过滤: {safe_title}")
-        else:
-            # 补全了之前省略的 Prompt
-            filter_prompt = """
-            你是一个学校通知审核员。请判断以下网页内容是否包含【实质性的通知、新闻、活动或公示信息】。
-            
-            🔴 判定为 NO (无价值) 的情况：
-            1. 仅包含网站导航菜单、页脚、版权声明、友情链接。
-            2. 页面提示“404”、“无访问权限”、“系统维护”、“测试页面”。
-            3. 正文几乎为空，或仅有“附件”二字但无具体说明。
-            4. 纯粹的商业广告。
-            
-            🟢 判定为 YES (有价值) 的情况：
-            1. 包含具体的活动时间、地点、参与人员名单。
-            2. 包含科研项目申报、截止日期、招标参数。
-            3. 包含具体的新闻报道、会议纪要。
-            
-            请仅回答 YES 或 NO。
-            """
+            return True
 
-            is_valuable = self._call_ai("hunter", filter_prompt, full_context[:2500])
+        # 3. AI 智能判断
+        filter_prompt = """
+        你是一个学校通知审核员。请判断以下网页内容是否包含【实质性的通知、新闻、活动或公示信息】。
+        
+        🔴 判定为 NO (无价值) 的情况：
+        1. 仅包含网站导航菜单、页脚、版权声明、友情链接。
+        2. 页面提示“404”、“无访问权限”、“系统维护”、“测试页面”。
+        3. 正文几乎为空，或仅有“附件”二字但无具体说明。
+        4. 纯粹的商业广告。
+        
+        🟢 判定为 YES (有价值) 的情况：
+        1. 包含具体的活动时间、地点、参与人员名单。
+        2. 包含科研项目申报、截止日期、招标参数。
+        3. 包含具体的新闻报道、会议纪要。
+        
+        请仅回答 YES 或 NO。
+        """
+        is_valuable = self._call_ai("hunter", filter_prompt, full_context[:2500])
 
-            if is_valuable and is_valuable.strip().upper().startswith("NO"):
-                return "IGNORE"
+        if is_valuable and is_valuable.strip().upper().startswith("NO"):
+            return False
 
-        # ================= 📝 总结层 (Prompt 增强版) =================
+        return True
 
-        # 补全了之前省略的 Prompt
+    def _generate_summary_content(self, full_context):
+        """原子任务：Commander/Strategist 总结逻辑"""
         summary_prompt = """
         你是一个专为高校师生服务的【信息提取助手】。请仔细阅读输入内容，提取关键信息，不要过度概括细节。
 
@@ -251,6 +266,25 @@ class BulletinSummarizer:
         if not summary:
             print("    ⚠️ Commander 失败，切换 Strategist...")
             summary = self._call_ai("strategist", summary_prompt, full_context[:12000])
+
+        return summary
+
+    # ==========================
+    # 🚀 主入口 (重构后结构极简)
+    # ==========================
+
+    def summarize(self, fetch_result, title=None):
+        if not fetch_result: return None
+
+        # 1. 准备上下文
+        safe_title, full_context = self._build_full_context(fetch_result, title)
+
+        # 2. 价值评估 (Hunter)
+        if not self._check_relevance(safe_title, full_context):
+            return "IGNORE"
+
+        # 3. 生成摘要 (Commander)
+        summary = self._generate_summary_content(full_context)
 
         if not summary:
             return "⚠️ AI 总结失败，请直接查看原文。"
