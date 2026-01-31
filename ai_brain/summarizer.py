@@ -6,11 +6,14 @@ import pandas as pd
 from pptx import Presentation
 from openai import OpenAI
 import sys
+import logging
 
 # 引用根目录配置
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
+# 初始化模块级日志
+logger = logging.getLogger(__name__)
 
 KEYS = config.AI_KEYS
 CLIENTS = {}
@@ -24,7 +27,7 @@ try:
     if KEYS["silicon"]:
         CLIENTS["silicon"] = OpenAI(api_key=KEYS["silicon"], base_url="https://api.siliconflow.cn/v1")
 except Exception as e:
-    print(f"⚠️ API Client 初始化警告: {e}")
+    logger.warning(f"⚠️ API Client 初始化警告: {e}")
 
 MODELS = {
     "commander": ("deepseek", "deepseek-chat"),   # 主力总结
@@ -44,7 +47,7 @@ class BulletinSummarizer:
         client = self.clients.get(provider_name)
 
         if not client:
-            print(f"    ⚠️ 未配置 {provider_name} 的 API Key，跳过 {role}")
+            logger.warning(f"    ⚠️ 未配置 {provider_name} 的 API Key，跳过 {role}")
             return None
 
         try:
@@ -59,7 +62,7 @@ class BulletinSummarizer:
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"    ⚠️ {role} [{model_name}] 调用失败: {e}")
+            logger.warning(f"    ⚠️ {role} [{model_name}] 调用失败: {e}")
             return None
 
     # ==========================
@@ -104,7 +107,7 @@ class BulletinSummarizer:
             return f"[PPT解析错误: {str(e)}]"
 
     def _extract_image_content(self, filepath):
-        print(f"    👁️ 正在识别图片内容: {os.path.basename(filepath)}...")
+        logger.info(f"    👁️ 正在识别图片内容: {os.path.basename(filepath)}...")
         try:
             with open(filepath, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
@@ -127,7 +130,7 @@ class BulletinSummarizer:
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"    ⚠️ 图片识别失败: {e}")
+            logger.warning(f"    ⚠️ 图片识别失败: {e}")
             return "[图片无法识别]"
 
     # ==========================
@@ -170,7 +173,7 @@ class BulletinSummarizer:
         """处理附件列表（纯遍历逻辑，复杂度极低）"""
         if not file_paths: return ""
 
-        print(f"    📎 正在预处理 {len(file_paths)} 个附件...")
+        logger.info(f"    📎 正在预处理 {len(file_paths)} 个附件...")
         extractors = self._get_extractor_map()
         combined_text = ""
 
@@ -210,7 +213,7 @@ class BulletinSummarizer:
         # 2. 白名单检查
         important_keywords = ["通知", "公告", "公示", "名单", "日程", "安排", "招标", "中标", "竞赛", "讲座", "大创", "补考", "申报"]
         if any(k in safe_title for k in important_keywords):
-            print(f"    🛡️ 触发白名单，跳过过滤: {safe_title}")
+            logger.info(f"    🛡️ 触发白名单，跳过过滤: {safe_title}")
             return True
 
         # 3. AI 智能判断
@@ -264,7 +267,7 @@ class BulletinSummarizer:
         summary = self._call_ai("commander", summary_prompt, full_context[:12000])
 
         if not summary:
-            print("    ⚠️ Commander 失败，切换 Strategist...")
+            logger.warning("    ⚠️ Commander 失败，切换 Strategist...")
             summary = self._call_ai("strategist", summary_prompt, full_context[:12000])
 
         return summary

@@ -11,15 +11,17 @@ Scripts/
 __pycache__/
 *.pyc
 
-# 4. 屏蔽敏感数据和运行时文件 (根据你的 data 目录结构)
-# 保留 database.py 代码，但屏蔽数据文件
+# 4. 屏蔽敏感数据和运行时文件
 data/cookies.json
-data/History.db
+data/*.db
 data/temp_files/
+data/state.json
+logs/
 *.log
 
 # 5. 系统垃圾文件
 Thumbs.db
+.DS_Store
 
-# 6. 屏蔽配置文件
+# 6. 屏蔽配置文件 (保留 config_sample.py，忽略 config.py)
 config.py

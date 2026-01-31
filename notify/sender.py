@@ -9,11 +9,16 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 from email.utils import formataddr
+import logging
 import sys
-import markdown  # 🟢 引入 Markdown 解析库
+import markdown
+import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
+
+# 初始化模块级日志
+logger = logging.getLogger(__name__)
 
 class Notifier:
     def __init__(self):
@@ -47,42 +52,22 @@ class Notifier:
     # ==========================================
 
     def _markdown_to_html(self, text):
-        """使用标准库 markdown 进行转换"""
+        """使用标准库 markdown 进行转换 (Pro Design)"""
         if not text: return ""
         
         # 扩展支持: extra (表格/脚注等), nl2br (换行转<br>)
         html = markdown.markdown(text, extensions=['extra', 'nl2br'])
         
         # --- 🎨 样式注入 (Mail Client Compatible) ---
-        
-        # H3: 带有左侧竖线的标题条
-        h3_style = (
-            'color: #2c3e50; '
-            'font-size: 16px; '
-            'margin-top: 25px; '
-            'margin-bottom: 15px; '
-            'padding: 8px 12px; '
-            'border-left: 4px solid #0056b3; '
-            'background-color: #f8f9fa; '
-            'border-radius: 0 4px 4px 0;'
-        )
+        h3_style = 'color: #2c3e50; font-size: 16px; margin-top: 25px; margin-bottom: 15px; padding: 8px 12px; border-left: 4px solid #0056b3; background-color: #f8f9fa; border-radius: 0 4px 4px 0;'
         html = html.replace('<h3>', f'<h3 style="{h3_style}">')
         
-        # Strong: 红色文字 + 浅红背景 (高亮效果)
-        strong_style = (
-            'color: #d9534f; '
-            'background-color: #fdf2f2; '
-            'padding: 0 4px; '
-            'border-radius: 2px; '
-            'font-weight: 600;'
-        )
+        strong_style = 'color: #d9534f; background-color: #fdf2f2; padding: 0 4px; border-radius: 2px; font-weight: 600;'
         html = html.replace('<strong>', f'<strong style="{strong_style}">')
         
-        # List: 优化列表间距
         ul_style = 'padding-left: 20px; color: #444; line-height: 1.8;'
         html = html.replace('<ul>', f'<ul style="{ul_style}">')
         
-        # Link: 蓝色链接
         a_style = 'color: #007bff; text-decoration: none; border-bottom: 1px dotted #007bff;'
         html = html.replace('<a href=', f'<a style="{a_style}" href=')
         
@@ -100,21 +85,13 @@ class Notifier:
             <title>{title}</title>
         </head>
         <body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;">
-            
-            <!-- 主卡片容器 -->
             <div style="max-width: 640px; margin: 30px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
-                
-                <!-- 顶部 Banner -->
                 <div style="background: linear-gradient(135deg, #0056b3 0%, #004494 100%); padding: 30px 20px; text-align: center;">
                     <h2 style="color: #ffffff; margin: 0; font-size: 20px; line-height: 1.4; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">{title}</h2>
                 </div>
-                
-                <!-- 正文内容 -->
                 <div style="padding: 30px; color: #333; line-height: 1.7; font-size: 15px;">
                     {html_content}
                 </div>
-                
-                <!-- 底部页脚 -->
                 <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
                     <p style="margin: 0 0 10px 0; font-size: 12px; color: #999;">🤖 此邮件由 <strong>NUIST Bulletin Bot</strong> 自动生成</p>
                     <p style="margin: 0; font-size: 12px;">
@@ -123,13 +100,10 @@ class Notifier:
                         </a>
                     </p>
                 </div>
-                
             </div>
-            
             <div style="text-align: center; padding: 20px; color: #aaa; font-size: 12px;">
                 Powered by AI Summarizer
             </div>
-            
         </body>
         </html>
         """
@@ -138,10 +112,8 @@ class Notifier:
         """创建邮件对象并设置头部"""
         message = MIMEMultipart()
         message['From'] = formataddr(("NUIST公告助手", self.sender_email))
-
         to_header_list = [formataddr(("同学", email)) for email in self.receiver_emails]
         message['To'] = ", ".join(to_header_list)
-
         message['Subject'] = Header(f"🔔 {title}", 'utf-8')
         message.attach(MIMEText(html_body, 'html', 'utf-8'))
         return message
@@ -161,16 +133,13 @@ class Notifier:
                 mime.set_payload(f.read())
 
             encoders.encode_base64(mime)
-
-            # 修复中文文件名乱码
             filename = os.path.basename(file_path)
             encoded_filename = Header(filename, 'utf-8').encode()
-
             mime.add_header('Content-Disposition', 'attachment', filename=encoded_filename)
             message.attach(mime)
-            print(f"    📎 [邮件] 添加附件: {filename}")
+            logger.info(f"    📎 [邮件] 添加附件: {filename}")
         except Exception as e:
-            print(f"    ⚠️ 附件 {file_path} 添加失败: {e}")
+            logger.warning(f"    ⚠️ 附件 {file_path} 添加失败: {e}")
 
     def _send_via_smtp(self, message, title):
         """原子任务：执行 SMTP 发送"""
@@ -179,35 +148,22 @@ class Notifier:
             server.login(self.sender_email, self.email_password)
             server.sendmail(self.sender_email, self.receiver_emails, message.as_string())
             server.quit()
-            print(f"    📧 [邮件] 群发成功 ({len(self.receiver_emails)}人): {title[:10]}...")
+            logger.info(f"    📧 [邮件] 群发成功 ({len(self.receiver_emails)}人): {title[:10]}...")
         except Exception as e:
-            print(f"    ❌ [邮件] 发送失败: {e}")
+            logger.error(f"    ❌ [邮件] 发送失败: {e}")
             raise e
-
-    # ==========================================
-    # 🚀 主入口 (极简版)
-    # ==========================================
 
     def send_email(self, title, content, attachments=None):
         if not self.enable_email: return
-
         try:
-            # 1. 准备正文
             html_body = self._generate_html_body(title, content)
-
-            # 2. 创建信封
             message = self._create_email_message(title, html_body)
-
-            # 3. 挂载附件
             if attachments:
                 for path in attachments:
                     self._add_single_attachment(message, path)
-
-            # 4. 发送
             self._send_via_smtp(message, title)
-
         except Exception as e:
-            print(f"    ❌ [邮件] 处理异常: {e}")
+            logger.error(f"    ❌ [邮件] 处理异常: {e}")
             raise e
 
     def send_qmsg(self, title, content):
@@ -218,8 +174,9 @@ class Notifier:
             url = f"https://qmsg.zendee.cn/send/{self.qmsg_key}"
             data = {"msg": msg_text}
             requests.post(url, data=data, timeout=10)
-            print("    🐧 [Qmsg] QQ消息推送成功！")
-        except: pass
+            logger.info("    🐧 [Qmsg] QQ消息推送成功！")
+        except Exception as e:
+            logger.warning(f"    ⚠️ [Qmsg] 发送失败: {e}")
 
     def send_webhook(self, title, content):
         if not self.enable_webhook or not self.webhook_url: return
@@ -232,29 +189,19 @@ class Notifier:
                 }
             }
             requests.post(self.webhook_url, json=data)
-            print("    🤖 [Webhook] 推送成功！")
-        except: pass
+            logger.info("    🤖 [Webhook] 推送成功！")
+        except Exception as e:
+            logger.warning(f"    ⚠️ [Webhook] 发送失败: {e}")
 
     def send(self, title, summary, attachments=None):
-        """
-        执行综合推送
-        :return: bool (True=核心渠道发送成功, False=失败)
-        """
-        # 核心渠道状态 (默认为 True，如果启用了邮件则由邮件结果决定)
         core_success = True
-
-        # 1. 发送邮件 (核心)
         if self.enable_email:
             try:
                 self.send_email(title, summary, attachments)
             except Exception:
-                # 邮件发送失败，标记核心任务失败
                 core_success = False
-
-        # 2. 发送其他通知 (辅助，不影响 success 状态)
         self.send_qmsg(title, summary)
         self.send_webhook(title, summary)
-
         return core_success
 
 if __name__ == "__main__":

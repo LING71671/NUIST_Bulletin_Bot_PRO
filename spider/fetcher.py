@@ -10,9 +10,13 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, unquote
 import urllib3
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
+import logging
 
 # 禁用 SSL 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 初始化模块级日志
+logger = logging.getLogger(__name__)
 
 # 路径配置
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -74,7 +78,7 @@ def download_file(url, cookie_dict, suggested_name=None):
         os.makedirs(TEMP_DIR)
 
     try:
-        print(f"    ⬇️ 正在请求附件链接...")
+        logger.info(f"    ⬇️ 正在请求附件链接...")
         session = requests.Session()
         session.headers.update({"User-Agent": DEFAULT_USER_AGENT})
         session.cookies.update(cookie_dict)
@@ -108,10 +112,10 @@ def download_file(url, cookie_dict, suggested_name=None):
             for chunk in res.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        print(f"    ✅ 附件下载成功: {final_filename}")
+        logger.info(f"    ✅ 附件下载成功: {final_filename}")
         return save_path
     except Exception as e:
-        print(f"    ⚠️ 下载失败: {e}")
+        logger.warning(f"    ⚠️ 下载失败: {e}")
         return None
 
 # ==========================================
@@ -173,18 +177,18 @@ def _navigate_and_fetch(page, url, context):
         page.goto(url, timeout=90000, wait_until="domcontentloaded")
     except PlaywrightError as e:
         if "ERR_EMPTY_RESPONSE" in str(e) or "ERR_CONNECTION_RESET" in str(e):
-            print(f"    ⚠️ 连接被切断，指示重试...")
+            logger.warning(f"    ⚠️ 连接被切断，指示重试...")
             return "RETRY"
         raise e
 
     page.wait_for_timeout(3000)
 
     if "404" in page.title() or "抱歉" in page.content():
-        print("    ❌ 页面 404")
+        logger.error("    ❌ 页面 404")
         return "ABORT"
 
     if "login" in page.url:
-        print("    ❌ Cookie/State 已失效")
+        logger.error("    ❌ Cookie/State 已失效")
         return "ABORT"
 
     html = page.content()
@@ -216,7 +220,7 @@ def fetch_content(url):
         try:
             if attempt > 1:
                 wait_time = random.uniform(2, 5) * attempt
-                print(f"    ⏳ 网络波动，等待 {wait_time:.1f}s...")
+                logger.info(f"    ⏳ 网络波动，等待 {wait_time:.1f}s...")
                 time.sleep(wait_time)
 
             result = _perform_single_attempt(url)
@@ -229,7 +233,7 @@ def fetch_content(url):
                 return result
 
         except Exception as e:
-            print(f"    ❌ 第 {attempt} 次抓取失败: {e}")
+            logger.error(f"    ❌ 第 {attempt} 次抓取失败: {e}")
             if attempt == MAX_RETRIES: return None
 
     return None
