@@ -89,10 +89,13 @@ def main():
 
         # 🟢 [核心修改] 提取文件列表并传给 notifier
         files_to_send = content.get('files', [])
-        notifier.send(title, summary, attachments=files_to_send)
+        is_success = notifier.send(title, summary, attachments=files_to_send)
 
-        # 入库
-        db.add_record(url, title, summary)
+        if is_success:
+            # 入库
+            db.add_record(url, title, summary)
+        else:
+            print(f"    ⚠️ 发送失败，跳过入库，保留至下轮重试: {title}")
 
         # 休息一下，防封禁
         time.sleep(3)

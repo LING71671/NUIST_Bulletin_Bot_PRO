@@ -10,6 +10,7 @@ from email import encoders
 from email.header import Header
 from email.utils import formataddr
 import sys
+import markdown  # 🟢 引入 Markdown 解析库
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
@@ -45,20 +46,92 @@ class Notifier:
     # 🧱 原子组件：邮件构建
     # ==========================================
 
+    def _markdown_to_html(self, text):
+        """使用标准库 markdown 进行转换"""
+        if not text: return ""
+        
+        # 扩展支持: extra (表格/脚注等), nl2br (换行转<br>)
+        html = markdown.markdown(text, extensions=['extra', 'nl2br'])
+        
+        # --- 🎨 样式注入 (Mail Client Compatible) ---
+        
+        # H3: 带有左侧竖线的标题条
+        h3_style = (
+            'color: #2c3e50; '
+            'font-size: 16px; '
+            'margin-top: 25px; '
+            'margin-bottom: 15px; '
+            'padding: 8px 12px; '
+            'border-left: 4px solid #0056b3; '
+            'background-color: #f8f9fa; '
+            'border-radius: 0 4px 4px 0;'
+        )
+        html = html.replace('<h3>', f'<h3 style="{h3_style}">')
+        
+        # Strong: 红色文字 + 浅红背景 (高亮效果)
+        strong_style = (
+            'color: #d9534f; '
+            'background-color: #fdf2f2; '
+            'padding: 0 4px; '
+            'border-radius: 2px; '
+            'font-weight: 600;'
+        )
+        html = html.replace('<strong>', f'<strong style="{strong_style}">')
+        
+        # List: 优化列表间距
+        ul_style = 'padding-left: 20px; color: #444; line-height: 1.8;'
+        html = html.replace('<ul>', f'<ul style="{ul_style}">')
+        
+        # Link: 蓝色链接
+        a_style = 'color: #007bff; text-decoration: none; border-bottom: 1px dotted #007bff;'
+        html = html.replace('<a href=', f'<a style="{a_style}" href=')
+        
+        return html
+
     def _generate_html_body(self, title, content):
-        """生成精美的 HTML 邮件正文"""
-        clean_content = content.replace("##", "").replace("**", "")
-        return f"""
-        <div style="font-family: '微软雅黑', sans-serif; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; max-width: 600px;">
-            <h2 style="color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px;">{title}</h2>
-            <div style="white-space: pre-wrap; line-height: 1.6; color: #333; font-size: 15px; background-color: #f8f9fa; padding: 15px; border-radius: 5px;">
-                {clean_content}
+        """生成精美的 HTML 邮件正文 (Pro Design)"""
+        html_content = self._markdown_to_html(content)
+        
+        return f"""<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{title}</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;">
+            
+            <!-- 主卡片容器 -->
+            <div style="max-width: 640px; margin: 30px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
+                
+                <!-- 顶部 Banner -->
+                <div style="background: linear-gradient(135deg, #0056b3 0%, #004494 100%); padding: 30px 20px; text-align: center;">
+                    <h2 style="color: #ffffff; margin: 0; font-size: 20px; line-height: 1.4; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">{title}</h2>
+                </div>
+                
+                <!-- 正文内容 -->
+                <div style="padding: 30px; color: #333; line-height: 1.7; font-size: 15px;">
+                    {html_content}
+                </div>
+                
+                <!-- 底部页脚 -->
+                <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
+                    <p style="margin: 0 0 10px 0; font-size: 12px; color: #999;">🤖 此邮件由 <strong>NUIST Bulletin Bot</strong> 自动生成</p>
+                    <p style="margin: 0; font-size: 12px;">
+                        <a href="https://github.com/LING71671/NUIST_Bulletin_Bot_PRO" style="color: #0056b3; text-decoration: none; font-weight: 500;">
+                            ✨ 查看项目源码 (GitHub)
+                        </a>
+                    </p>
+                </div>
+                
             </div>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="font-size: 12px; color: #999; text-align: center;">
-                来自 NUIST Bulletin Bot 🤖 | AI 自动摘要
-            </p>
-        </div>
+            
+            <div style="text-align: center; padding: 20px; color: #aaa; font-size: 12px;">
+                Powered by AI Summarizer
+            </div>
+            
+        </body>
+        </html>
         """
 
     def _create_email_message(self, title, html_body):
@@ -109,6 +182,7 @@ class Notifier:
             print(f"    📧 [邮件] 群发成功 ({len(self.receiver_emails)}人): {title[:10]}...")
         except Exception as e:
             print(f"    ❌ [邮件] 发送失败: {e}")
+            raise e
 
     # ==========================================
     # 🚀 主入口 (极简版)
@@ -133,7 +207,8 @@ class Notifier:
             self._send_via_smtp(message, title)
 
         except Exception as e:
-            print(f"    ❌ [邮件] 构建过程异常: {e}")
+            print(f"    ❌ [邮件] 处理异常: {e}")
+            raise e
 
     def send_qmsg(self, title, content):
         if not self.enable_qmsg or not self.qmsg_key: return
@@ -161,9 +236,26 @@ class Notifier:
         except: pass
 
     def send(self, title, summary, attachments=None):
-        self.send_email(title, summary, attachments)
+        """
+        执行综合推送
+        :return: bool (True=核心渠道发送成功, False=失败)
+        """
+        # 核心渠道状态 (默认为 True，如果启用了邮件则由邮件结果决定)
+        core_success = True
+
+        # 1. 发送邮件 (核心)
+        if self.enable_email:
+            try:
+                self.send_email(title, summary, attachments)
+            except Exception:
+                # 邮件发送失败，标记核心任务失败
+                core_success = False
+
+        # 2. 发送其他通知 (辅助，不影响 success 状态)
         self.send_qmsg(title, summary)
         self.send_webhook(title, summary)
+
+        return core_success
 
 if __name__ == "__main__":
     pass
