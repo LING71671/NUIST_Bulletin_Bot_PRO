@@ -38,7 +38,9 @@ def process_single_task(item, db, ai, notifier):
     logger.info(f"⚡ [Worker] 开始处理: {title[:15]}...")
 
     # 3. 随机等待 (错峰请求，防止并发触发防火墙)
-    time.sleep(random.uniform(0.5, 2.0))
+    delay_min = config.SYSTEM.get("WORKER_DELAY_MIN", 0.5)
+    delay_max = config.SYSTEM.get("WORKER_DELAY_MAX", 2.0)
+    time.sleep(random.uniform(delay_min, delay_max))
 
     try:
         # 4. 抓取内容

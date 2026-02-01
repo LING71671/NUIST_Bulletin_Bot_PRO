@@ -77,7 +77,10 @@ def download_file(url, cookie_dict, suggested_name=None):
         session = requests.Session()
         session.headers.update({"User-Agent": DEFAULT_USER_AGENT})
         session.cookies.update(cookie_dict)
-        res = session.get(url, stream=True, verify=False, timeout=60)
+        
+        req_timeout = config.SPIDER.get("REQUEST_TIMEOUT", 60)
+        res = session.get(url, stream=True, verify=False, timeout=req_timeout)
+        
         final_filename = "unknown.dat"
         server_filename = get_filename_from_cd(res.headers.get('Content-Disposition'))
         if server_filename:
@@ -97,8 +100,10 @@ def download_file(url, cookie_dict, suggested_name=None):
             name, ext = os.path.splitext(final_filename)
             final_filename = f"{name}_{int(time.time())}{ext}"
             save_path = os.path.join(TEMP_DIR, final_filename)
+            
+        chunk_size = config.SPIDER.get("CHUNK_SIZE", 8192)
         with open(save_path, "wb") as f:
-            for chunk in res.iter_content(chunk_size=8192):
+            for chunk in res.iter_content(chunk_size=chunk_size):
                 f.write(chunk)
         logger.info(f"    ✅ 附件下载成功: {final_filename}")
         return save_path
@@ -147,7 +152,10 @@ def _navigate_and_fetch(page, url, context):
             logger.warning(f"    ⚠️ 连接被切断，指示重试...")
             return "RETRY"
         raise e
-    page.wait_for_timeout(3000)
+    
+    wait_time = config.SPIDER.get("WAIT_AFTER_GOTO", 3000)
+    page.wait_for_timeout(wait_time)
+    
     if "404" in page.title() or "抱歉" in page.content():
         logger.error("    ❌ 页面 404")
         return "ABORT"
@@ -169,11 +177,13 @@ def _perform_single_attempt(url):
             browser.close()
 
 def fetch_content(url):
-    MAX_RETRIES = 3
-    for attempt in range(1, MAX_RETRIES + 1):
+    max_retries = config.SPIDER.get("MAX_RETRIES", 3)
+    for attempt in range(1, max_retries + 1):
         try:
             if attempt > 1:
-                wait_time = random.uniform(2, 5) * attempt
+                delay_min = config.SPIDER.get("RANDOM_DELAY_MIN", 2)
+                delay_max = config.SPIDER.get("RANDOM_DELAY_MAX", 5)
+                wait_time = random.uniform(delay_min, delay_max) * attempt
                 logger.info(f"    ⏳ 网络波动，等待 {wait_time:.1f}s...")
                 time.sleep(wait_time)
             result = _perform_single_attempt(url)
@@ -182,5 +192,5 @@ def fetch_content(url):
             if result: return result
         except Exception as e:
             logger.error(f"    ❌ 第 {attempt} 次抓取失败: {e}")
-            if attempt == MAX_RETRIES: return None
+            if attempt == max_retries: return None
     return None

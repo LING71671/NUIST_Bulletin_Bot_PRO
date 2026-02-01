@@ -4,6 +4,10 @@ import sys
 from logging.handlers import RotatingFileHandler
 import coloredlogs
 
+# 引用根目录配置
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import config
+
 def setup_logger(log_dir="logs", log_filename="bot.log", level=logging.INFO):
     """
     配置全局日志系统
@@ -29,9 +33,12 @@ def setup_logger(log_dir="logs", log_filename="bot.log", level=logging.INFO):
     root_logger.handlers = []
 
     # 3. 文件处理器 (RotatingFileHandler)
-    # maxBytes=5MB, backupCount=5 (保留5个历史文件)
+    # 默认 maxBytes=5MB, backupCount=5
+    max_bytes = config.SYSTEM.get("LOG_MAX_BYTES", 5*1024*1024)
+    backup_count = config.SYSTEM.get("LOG_BACKUP_COUNT", 5)
+    
     file_handler = RotatingFileHandler(
-        log_path, maxBytes=5*1024*1024, backupCount=5, encoding='utf-8'
+        log_path, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'
     )
     file_formatter = logging.Formatter(
         fmt='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',

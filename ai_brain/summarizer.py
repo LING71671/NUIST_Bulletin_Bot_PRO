@@ -51,14 +51,17 @@ class BulletinSummarizer:
             return None
 
         try:
+            temp = config.AI_CONFIG.get("TEMPERATURE", 0.1)
+            timeout = config.AI_CONFIG.get("TIMEOUT", 45)
+            
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ],
-                temperature=0.1,
-                timeout=45
+                temperature=temp,
+                timeout=timeout
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -72,8 +75,9 @@ class BulletinSummarizer:
     def _extract_pdf(self, filepath):
         text = ""
         try:
+            max_pages = config.AI_CONFIG.get("MAX_ATTACH_PAGES", 10)
             with fitz.open(filepath) as doc:
-                for page in doc[:10]:
+                for page in doc[:max_pages]:
                     text += page.get_text()
             return text[:5000]
         except: return "[PDF解析错误]"
@@ -97,8 +101,9 @@ class BulletinSummarizer:
     def _extract_ppt(self, filepath):
         text = ""
         try:
+            max_slides = config.AI_CONFIG.get("MAX_ATTACH_SLIDES", 15)
             prs = Presentation(filepath)
-            for slide in prs.slides[:15]:
+            for slide in prs.slides[:max_slides]:
                 for shape in slide.shapes:
                     if hasattr(shape, "text"):
                         text += shape.text + "\n"
@@ -115,6 +120,7 @@ class BulletinSummarizer:
             client = self.clients.get("zhipu")
             if not client: return "[未配置Vision模型]"
 
+            timeout = config.AI_CONFIG.get("VISION_TIMEOUT", 30)
             response = client.chat.completions.create(
                 model="glm-4v-flash",
                 messages=[
@@ -126,7 +132,7 @@ class BulletinSummarizer:
                         ]
                     }
                 ],
-                timeout=30
+                timeout=timeout
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -233,7 +239,8 @@ class BulletinSummarizer:
         
         请仅回答 YES 或 NO。
         """
-        is_valuable = self._call_ai("hunter", filter_prompt, full_context[:2500])
+        filter_len = config.AI_CONFIG.get("FILTER_CONTEXT_LEN", 2500)
+        is_valuable = self._call_ai("hunter", filter_prompt, full_context[:filter_len])
 
         if is_valuable and is_valuable.strip().upper().startswith("NO"):
             return False
@@ -263,12 +270,12 @@ class BulletinSummarizer:
 
         ⏰ **截止时间**：(精确提取日期和具体时间点)
         """
-
-        summary = self._call_ai("commander", summary_prompt, full_context[:12000])
+        max_ctx = config.AI_CONFIG.get("MAX_CONTEXT_LEN", 12000)
+        summary = self._call_ai("commander", summary_prompt, full_context[:max_ctx])
 
         if not summary:
             logger.warning("    ⚠️ Commander 失败，切换 Strategist...")
-            summary = self._call_ai("strategist", summary_prompt, full_context[:12000])
+            summary = self._call_ai("strategist", summary_prompt, full_context[:max_ctx])
 
         return summary
 
